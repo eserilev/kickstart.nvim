@@ -55,6 +55,13 @@ return {
         -- Toggles
         map('n', '<leader>tb', gitsigns.toggle_current_line_blame, { desc = '[T]oggle git show [b]lame line' })
         map('n', '<leader>tD', gitsigns.preview_hunk_inline, { desc = '[T]oggle git show [D]eleted' })
+        -- One key shows the whole diff inside this buffer: added lines in
+        -- green, removed lines in red as virtual lines, changed words marked.
+        map('n', '<leader>ti', function()
+          gitsigns.toggle_linehl()
+          gitsigns.toggle_deleted()
+          gitsigns.toggle_word_diff()
+        end, { desc = '[T]oggle git [i]nline diff' })
       end,
     },
   },

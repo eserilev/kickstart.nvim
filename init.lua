@@ -88,7 +88,7 @@ P.S. You can delete this when you're done too. It's your config now! :)
 -- See `:help mapleader`
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
 vim.g.mapleader = ' '
-vim.g.maplocalleader = ' '
+vim.g.maplocalleader = '\\'
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
 vim.g.have_nerd_font = false
@@ -98,11 +98,15 @@ vim.g.have_nerd_font = false
 -- NOTE: You can change these options as you wish!
 --  For more options, you can see `:help option-list`
 
+-- Enable autofile read
+vim.opt.autoread = true
+vim.opt.updatetime = 1000
+
 -- Make line numbers default
 vim.o.number = true
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.o.relativenumber = true
+vim.o.relativenumber = true
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.o.mouse = 'a'
@@ -152,6 +156,9 @@ vim.o.splitbelow = true
 vim.o.list = true
 vim.opt.listchars = { tab = '» ', trail = '·', nbsp = '␣' }
 
+-- Enable file autoread
+vim.opt.autoread = true
+
 -- Preview substitutions live, as you type!
 vim.o.inccommand = 'split'
 
@@ -175,6 +182,7 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
 -- Diagnostic keymaps
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = 'Show diagnostic [E]rror' })
 
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -216,6 +224,36 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
   callback = function()
     vim.hl.on_yank()
+  end,
+})
+
+vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold', 'CursorHoldI' }, {
+  pattern = '*',
+  command = 'checktime',
+})
+
+-- Tell the notes-preview pane which markdown file to render
+-- (see ~/.local/bin/notes-preview and the notes() function in ~/.bashrc)
+vim.api.nvim_create_autocmd({ 'BufEnter', 'BufWritePost' }, {
+  desc = 'Track current markdown file for notes-preview',
+  group = vim.api.nvim_create_augroup('notes-preview', { clear = true }),
+  pattern = '*.md',
+  callback = function(event)
+    local name = vim.api.nvim_buf_get_name(event.buf)
+    if name ~= '' then
+      vim.fn.writefile({ name }, vim.fn.expand '~/.cache/notes-current-file')
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd('ExitPre', {
+  desc = 'Confirm before quitting Neovim, even with no unsaved changes',
+  group = vim.api.nvim_create_augroup('confirm-quit', { clear = true }),
+  callback = function()
+    if vim.fn.confirm('Quit Neovim?', '&Yes\n&No', 2) == 1 then
+      return
+    end
+    error('quit cancelled', 0)
   end,
 })
 
@@ -622,9 +660,23 @@ require('lazy').setup({
             map('<leader>th', function()
               vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled { bufnr = event.buf })
             end, '[T]oggle Inlay [H]ints')
+            vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
           end
         end,
       })
+
+      -- Stale inlay hints can point past the end of a changed line and crash the
+      -- redraw with "Invalid 'col': out of range" (upstream neovim issue). Place
+      -- inlay hint extmarks with strict = false so a stale hint clamps instead
+      -- of erroring.
+      local inlay_hint_ns = vim.api.nvim_create_namespace 'nvim.lsp.inlayhint'
+      local orig_set_extmark = vim.api.nvim_buf_set_extmark
+      vim.api.nvim_buf_set_extmark = function(buf, ns, line, col, opts)
+        if ns == inlay_hint_ns and opts then
+          opts.strict = false
+        end
+        return orig_set_extmark(buf, ns, line, col, opts)
+      end
 
       -- Diagnostic Config
       -- See :help vim.diagnostic.Opts
@@ -674,7 +726,7 @@ require('lazy').setup({
         -- clangd = {},
         -- gopls = {},
         -- pyright = {},
-        -- rust_analyzer = {},
+        rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
@@ -940,28 +992,28 @@ require('lazy').setup({
   },
   { -- Highlight, edit, and navigate code
     'nvim-treesitter/nvim-treesitter',
+    branch = 'main',
     build = ':TSUpdate',
-    main = 'nvim-treesitter.configs', -- Sets main module to use for opts
-    -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
-    opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
-      -- Autoinstall languages that are not installed
-      auto_install = true,
-      highlight = {
-        enable = true,
-        -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
-        --  If you are experiencing weird indenting issues, add the language to
-        --  the list of additional_vim_regex_highlighting and disabled languages for indent.
-        additional_vim_regex_highlighting = { 'ruby' },
-      },
-      indent = { enable = true, disable = { 'ruby' } },
-    },
-    -- There are additional nvim-treesitter modules that you can use to interact
-    -- with nvim-treesitter. You should go explore a few and see what interests you:
-    --
-    --    - Incremental selection: Included, see `:help nvim-treesitter-incremental-selection-mod`
-    --    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
-    --    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
+    lazy = false,
+    config = function()
+      local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'rust', 'toml', 'vim', 'vimdoc', 'yaml' }
+      require('nvim-treesitter').install(parsers)
+      vim.api.nvim_create_autocmd('FileType', {
+        desc = 'Start treesitter highlighting and indent',
+        group = vim.api.nvim_create_augroup('treesitter-start', { clear = true }),
+        callback = function(args)
+          local filetype = vim.bo[args.buf].filetype
+          -- vimtex owns LaTeX highlighting and mathzone detection.
+          if filetype == 'tex' or filetype == 'plaintex' or filetype == 'latex' then
+            return
+          end
+          local lang = vim.treesitter.language.get_lang(filetype)
+          if lang and pcall(vim.treesitter.start, args.buf, lang) then
+            vim.bo[args.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end
+        end,
+      })
+    end,
   },
 
   -- The following comments only work if you have downloaded the kickstart repo, not just copy pasted the
@@ -977,14 +1029,14 @@ require('lazy').setup({
   -- require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
   -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
-  -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
+  require 'kickstart.plugins.neo-tree',
+  require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- { import = 'custom.plugins' },
+  { import = 'custom.plugins' },
   --
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
   -- Or use telescope!
